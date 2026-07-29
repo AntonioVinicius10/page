@@ -9,17 +9,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $hostnameCustom = trim($_POST['hostname_custom'] ?? '');
     $setorNome      = trim($_POST['setor_nome'] ?? '');
     $apiUrl         = trim($_POST['api_url'] ?? '');
-    $apiToken       = trim($_POST['api_token'] ?? 'SEU_TOKEN_MUITO_SEGURO_AQUI');
+    $apiToken       = trim($_POST['api_token'] ?? 'BORBOREMA_SECURE_TOKEN_2026');
 
-    if (empty($hostnameCustom) || empty($setorNome)) {
-        $msg = "Por favor, preencha o Nome da Máquina e o Setor.";
+    if (empty($hostnameCustom) || empty($setorNome) || empty($apiUrl)) {
+        $msg = "Por favor, preencha todos os campos obrigatórios.";
         $msgType = "error";
     } else {
         $configData = [
             'api_url'         => $apiUrl,
             'api_token'       => $apiToken,
             'hostname_custom' => $hostnameCustom,
-            'setor_nome'      => $setorNome
+            'setor_nome'      => $setorNome,
+            'intervalo'       => 60
         ];
 
         if (file_put_contents($configFile, json_encode($configData, JSON_PRETTY_PRINT))) {
@@ -42,7 +43,7 @@ $hostnamePadrao = gethostname();
     <style>
         * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
         body { background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .card { background: #1e293b; padding: 2rem; border-radius: 12px; width: 100%; max-width: 420px; border: 1px solid #334155; }
+        .card { background: #1e293b; padding: 2rem; border-radius: 12px; width: 100%; max-width: 450px; border: 1px solid #334155; }
         h2 { margin-top: 0; color: #38bdf8; text-align: center; }
         .form-group { margin-bottom: 1.2rem; }
         label { display: block; margin-bottom: 0.4rem; font-size: 0.9rem; color: #94a3b8; }
@@ -75,7 +76,12 @@ $hostnamePadrao = gethostname();
 
         <div class="form-group">
             <label for="api_url">URL da API Central:</label>
-            <input type="url" id="api_url" name="api_url" value="http://localhost/helpdesk/api/telemetria.php" required>
+            <input type="url" id="api_url" name="api_url" value="http://192.168.1.11/helpdesk_prefeitura/api/telemetria.php" required>
+        </div>
+
+        <div class="form-group">
+            <label for="api_token">Token da API:</label>
+            <input type="text" id="api_token" name="api_token" value="BORBOREMA_SECURE_TOKEN_2026" required>
         </div>
 
         <button type="submit">Salvar Configuração</button>
