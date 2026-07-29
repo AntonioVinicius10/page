@@ -61,11 +61,11 @@ function coletarDadosEAnalisar(array $config): array {
     $alertas = [];
 
     if ($ramTotalMB > 0 && ($ramLivreMB / $ramTotalMB) < 0.10) {
-        $alertas[] = 'CRITICAL_LOW_RAM';
+        $alertas[] = 'A memoria ram esta quase cheia';
     }
 
     if ($discoLivreGB < 5) {
-        $alertas[] = 'CRITICAL_LOW_DISK';
+        $alertas[] = 'O disco esta Quase cheio';
     }
 
     return [
