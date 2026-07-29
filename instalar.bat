@@ -15,7 +15,7 @@ start "" /B "%~dp0php\php.exe" -S localhost:8080 -t "%~dp0"
 
 :: 2. Aguarda 2 segundos e abre o navegador no Setup
 timeout /t 2 /nobreak > nul
-start http://localhost:8080/setup.php
+start http://localhost:8080/index.php
 
 echo.
 echo Complete a configuracao no navegador que foi aberto.
