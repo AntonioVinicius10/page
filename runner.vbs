@@ -1,2 +1,7 @@
 Set WshShell = CreateObject("WScript.Shell")
-WshShell.Run "cmd /c cd /d C:\page && .\php\php.exe monitor.php", 0, False
+
+WshShell.CurrentDirectory = "C:\page"
+
+WshShell.Run """C:\page\php\php.exe"" ""C:\page\monitor.php""", 0, False
+
+Set WshShell = Nothing
