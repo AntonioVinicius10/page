@@ -28,7 +28,7 @@ taskkill /IM php.exe /F > nul 2>&1
 :: 4. Registra no Agendador de Tarefas do Windows (Roda no Logon com privilegios altos)
 echo.
 echo Registrando tarefa no Windows...
-schtasks /create /tn "PageAgent" /tr "wscript.exe \"C:\page\runner.vbs\"" /sc onlogon /delay 0000:10 /rl highest /f
+schtasks /create /tn "PageAgent" /tr "wscript.exe \"C:\page\runner.vbs\"" /sc onlogon /delay 0002:00 /rl highest /f
 
 :: 5. Executa o agente imediatamente para comecar o monitoramento agora
 echo Iniciando o agente em segundo plano...
