@@ -4,19 +4,37 @@ title Instalador - Page Agent
 cd /d "%~dp0"
 
 echo =======================================================
-echo        ABRINDO CONFIGURACAO DO PAGE AGENT
+echo          PAGE AGENT - INSTALACAO
 echo =======================================================
 echo.
 
+:: Verifica se estamos em C:\page
+if not exist "%~dp0monitor.php" (
+    echo ERRO: monitor.php nao encontrado.
+    echo.
+    pause
+    exit /b 1
+)
+
+if not exist "%~dp0php\php.exe" (
+    echo ERRO: php.exe nao encontrado.
+    echo.
+    pause
+    exit /b 1
+)
+
+echo Arquivos encontrados.
+echo.
+
 :: =======================================================
-:: 1. Inicia servidor PHP temporario
+:: CONFIGURACAO
 :: =======================================================
 
-echo Iniciando servidor PHP...
+echo Iniciando servidor de configuracao...
 
 start "" /B "%~dp0php\php.exe" -S 127.0.0.1:8080 -t "%~dp0"
 
-timeout /t 2 /nobreak > nul
+timeout /t 2 /nobreak >nul
 
 start "" "http://127.0.0.1:8080/index.php"
 
@@ -24,33 +42,32 @@ echo.
 echo =======================================================
 echo Configure o agente no navegador.
 echo.
-echo Depois de clicar em SALVAR, volte para esta janela
-echo e pressione qualquer tecla.
+echo Depois de clicar em SALVAR, volte aqui.
 echo =======================================================
 echo.
 
-pause > nul
+pause >nul
 
 :: =======================================================
-:: 2. Encerra PHP usado pela configuracao
+:: ENCERRA SERVIDOR DE CONFIGURACAO
 :: =======================================================
 
 echo.
 echo Encerrando servidor de configuracao...
 
-taskkill /IM php.exe /F > nul 2>&1
+taskkill /IM php.exe /F >nul 2>&1
 
 :: =======================================================
-:: 3. Remove tarefa anterior
+:: REMOVE TAREFA ANTIGA
 :: =======================================================
 
 echo.
-echo Removendo tarefa antiga...
+echo Removendo tarefa anterior...
 
-schtasks /delete /tn "PageAgent" /f > nul 2>&1
+schtasks /delete /tn "PageAgent" /f >nul 2>&1
 
 :: =======================================================
-:: 4. Registra PageAgent para iniciar no LOGIN
+:: CRIA TAREFA NO LOGIN DO WINDOWS
 :: =======================================================
 
 echo.
@@ -76,25 +93,23 @@ if errorlevel 1 (
 
 echo.
 echo PageAgent registrado com sucesso!
-
-:: =======================================================
-:: 5. Inicia agora
-:: =======================================================
-
 echo.
+
+:: =======================================================
+:: INICIA AGORA
+:: =======================================================
+
 echo Iniciando PageAgent...
 
 start "" wscript.exe "C:\page\runner.vbs"
 
 echo.
 echo =======================================================
-echo       PAGE AGENT INSTALADO COM SUCESSO!
+echo       PAGE AGENT INSTALADO COM SUCESSO
 echo =======================================================
 echo.
-echo O agente sera iniciado automaticamente quando
-echo voce entrar no Windows.
+echo O agente sera iniciado automaticamente no login.
 echo.
 echo =======================================================
-echo.
 
 pause
