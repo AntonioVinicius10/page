@@ -1,6 +1,6 @@
 <?php
 /**
- * Agente de Monitoramento de Hardware - Helpdesk Prefeitura
+ * Agente de Monitoramento de Hardware - Helpdesk Prefeitura (Modo CPU-Z Avançado)
  * Rodando em loop de segundo plano.
  */
 
@@ -41,43 +41,125 @@ function getPsData(string $command): array {
     return is_array($data) ? $data : [];
 }
 
+/**
+ * Traduz o código numérico de tipo de memória do WMI
+ */
+function traduzirTipoRam(int $smbiosType): string {
+    $tipos = [
+        20 => 'DDR', 21 => 'DDR2', 22 => 'DDR2 FB-DIMM',
+        24 => 'DDR3', 26 => 'DDR4', 34 => 'DDR5'
+    ];
+    return $tipos[$smbiosType] ?? 'Desconhecido/Outro';
+}
+
 function coletarDadosEAnalisar(array $config): array {
     $hostname  = !empty($config['hostname_custom']) ? $config['hostname_custom'] : (getenv('COMPUTERNAME') ?: 'DESCONHECIDO');
     $setorNome = !empty($config['setor_nome']) ? $config['setor_nome'] : 'Geral';
-    
+
+    // 1. PROCESSADOR (CPU)
     $cpuInfo = getPsData("Get-CimInstance -ClassName Win32_Processor");
-    $cpuModelo = $cpuInfo['Name'] ?? 'Processador Desconhecido';
+    $cpuModelo      = $cpuInfo['Name'] ?? 'Processador Desconhecido';
+    $cpuCores       = $cpuInfo['NumberOfCores'] ?? 0;
+    $cpuThreads     = $cpuInfo['NumberOfLogicalProcessors'] ?? 0;
+    $cpuClockMaxMHz = $cpuInfo['MaxClockSpeed'] ?? 0;
+    $cpuSocket      = $cpuInfo['SocketDesignation'] ?? 'N/A';
 
+    // 2. PLACA-MÃE (Motherboard / Mainboard)
+    $boardInfo = getPsData("Get-CimInstance -ClassName Win32_BaseBoard");
+    $moboFabricante = $boardInfo['Manufacturer'] ?? 'Desconhecido';
+    $moboModelo     = $boardInfo['Product'] ?? 'Desconhecido';
+
+    $biosInfo = getPsData("Get-CimInstance -ClassName Win32_BIOS");
+    $biosVersao = $biosInfo['SMBIOSBIOSVersion'] ?? ($biosInfo['Version'] ?? 'N/A');
+
+    // 3. PLACA DE VÍDEO (GPU)
     $gpuInfo = getPsData("Get-CimInstance -ClassName Win32_VideoController");
-    $gpuModelo = isset($gpuInfo[0]) ? $gpuInfo[0]['Name'] : ($gpuInfo['Name'] ?? 'Placa de Vídeo Desconhecida');
+    // Trata caso venha array (notebooks com GPU integrada + dedicada)
+    $gpuPrincipal = isset($gpuInfo[0]) ? $gpuInfo[0] : $gpuInfo;
+    $gpuModelo = $gpuPrincipal['Name'] ?? 'Placa de Vídeo Desconhecida';
+    $gpuVramMB = round(($gpuPrincipal['AdapterRAM'] ?? 0) / (1024 * 1024));
 
-    $osInfo = getPsData("Get-CimInstance -ClassName Win32_OperatingSystem");
+    // 4. MEMÓRIA RAM DETALHADA
+    $osInfo     = getPsData("Get-CimInstance -ClassName Win32_OperatingSystem");
     $ramTotalMB = round(($osInfo['TotalVisibleMemorySize'] ?? 0) / 1024);
     $ramLivreMB = round(($osInfo['FreePhysicalMemory'] ?? 0) / 1024);
 
-    $diskInfo = getPsData("Get-CimInstance -ClassName Win32_LogicalDisk -Filter \"DeviceID='C:'\"");
+    $ramPentesInfo = getPsData("Get-CimInstance -ClassName Win32_PhysicalMemory");
+    // Se for apenas 1 pente, engloba em array para manter o padrão
+    if (isset($ramPentesInfo['Capacity'])) {
+        $ramPentesInfo = [$ramPentesInfo];
+    }
+
+    $pentesCount = count($ramPentesInfo);
+    $ramClockMHz = 0;
+    $ramTipo     = 'Desconhecido';
+
+    if ($pentesCount > 0) {
+        $ramClockMHz = $ramPentesInfo[0]['Speed'] ?? 0;
+        $ramTipo = traduzirTipoRam($ramPentesInfo[0]['SMBIOSMemoryType'] ?? 0);
+    }
+
+    // 5. ARMAZENAMENTO (DISCO C:)
+    $diskInfo     = getPsData("Get-CimInstance -ClassName Win32_LogicalDisk -Filter \"DeviceID='C:'\"");
+    $discoTotalGB = round(($diskInfo['Size'] ?? 0) / (1024 * 1024 * 1024));
     $discoLivreGB = round(($diskInfo['FreeSpace'] ?? 0) / (1024 * 1024 * 1024));
 
-    $alertas = [];
+    // 6. SISTEMA OPERACIONAL E REDE
+    $osNome  = $osInfo['Caption'] ?? 'Windows OS';
+    $osArch  = $osInfo['OSArchitecture'] ?? '64-bit';
 
+    $netInfo = getPsData("Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq \$true }");
+    $netActive = isset($netInfo[0]) ? $netInfo[0] : $netInfo;
+    $ipArray   = $netActive['IPAddress'] ?? [];
+    $ipLocal   = is_array($ipArray) ? ($ipArray[0] ?? '127.0.0.1') : $ipArray;
+    $macAddr   = $netActive['MACAddress'] ?? '00:00:00:00:00:00';
+
+    // 7. ALERTAS
+    $alertas = [];
     if ($ramTotalMB > 0 && ($ramLivreMB / $ramTotalMB) < 0.10) {
         $alertas[] = 'A memoria ram esta quase cheia';
     }
-
     if ($discoLivreGB < 5) {
         $alertas[] = 'O disco esta Quase cheio';
     }
 
+    // PAYLOAD "CPU-Z STYLE" COMPLETO
     return [
-        'token'          => $config['api_token'],
-        'hostname'       => trim($hostname),
-        'setor_nome'     => trim($setorNome),
-        'cpu_modelo'     => trim($cpuModelo),
-        'gpu_modelo'     => trim($gpuModelo),
-        'ram_total_mb'   => $ramTotalMB,
-        'ram_livre_mb'   => $ramLivreMB,
-        'disco_livre_gb' => $discoLivreGB,
-        'alertas'        => $alertas
+        'token'           => $config['api_token'],
+        'hostname'        => trim($hostname),
+        'setor_nome'      => trim($setorNome),
+        'ip_local'        => $ipLocal,
+        'mac_address'     => $macAddr,
+        'os_nome'         => trim($osNome) . " (" . $osArch . ")",
+        
+        // Dados de CPU
+        'cpu_modelo'      => trim($cpuModelo),
+        'cpu_cores'       => $cpuCores,
+        'cpu_threads'     => $cpuThreads,
+        'cpu_clock_mhz'   => $cpuClockMaxMHz,
+        'cpu_socket'      => $cpuSocket,
+
+        // Dados de Placa-Mãe
+        'mobo_fabricante' => trim($moboFabricante),
+        'mobo_modelo'     => trim($moboModelo),
+        'bios_versao'     => trim($biosVersao),
+
+        // Dados de GPU
+        'gpu_modelo'      => trim($gpuModelo),
+        'gpu_vram_mb'     => $gpuVramMB,
+
+        // Dados de RAM
+        'ram_total_mb'    => $ramTotalMB,
+        'ram_livre_mb'    => $ramLivreMB,
+        'ram_tipo'        => $ramTipo,
+        'ram_clock_mhz'   => $ramClockMHz,
+        'ram_pentes'      => $pentesCount,
+
+        // Dados de Disco
+        'disco_total_gb'  => $discoTotalGB,
+        'disco_livre_gb'  => $discoLivreGB,
+
+        'alertas'         => $alertas
     ];
 }
 
@@ -102,7 +184,6 @@ function enviarParaAPI(array $payload, string $apiUrl, string $apiToken): bool {
     $curlErr  = curl_error($ch);
     curl_close($ch);
 
-    // Grava log detalhado do retorno da API
     $logMsg = sprintf(
         "[%s] HTTP: %d | Erro cURL: %s | Resposta API: %s\n",
         date('Y-m-d H:i:s'),
