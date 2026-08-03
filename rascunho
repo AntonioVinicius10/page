@@ -32,30 +32,13 @@ function carregarConfiguracao(string $filePath): array {
 // FUNÇÕES AUXILIARES DE COLETA E ENVIO
 // =========================================================================
 
-function getPsData(string $command): array
-{
-    $cmd = 'powershell -NoProfile -ExecutionPolicy Bypass -Command "' .
-        $command .
-        ' | ConvertTo-Json -Depth 5 -Compress"';
-
-    $output = shell_exec($cmd);
-
-    if ($output === null || trim($output) === '') {
-        return [];
-    }
-
+function getPsData(string $command): array {
+    $cmd = "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$command | ConvertTo-Json -Compress\"";
+    $output = @shell_exec($cmd);
+    if (!$output) return [];
+    
     $data = json_decode(trim($output), true);
-
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        file_put_contents(
-            __DIR__ . '/powershell.log',
-            date('[Y-m-d H:i:s] ') . $output . PHP_EOL,
-            FILE_APPEND
-        );
-        return [];
-    }
-
-    return $data;
+    return is_array($data) ? $data : [];
 }
 
 /**
@@ -74,11 +57,7 @@ function coletarDadosEAnalisar(array $config): array {
     $setorNome = !empty($config['setor_nome']) ? $config['setor_nome'] : 'Geral';
 
     // 1. PROCESSADOR (CPU)
-    $cpuInfo = getPsData("Get-CimInstance Win32_Processor");
-
-       if (isset($cpuInfo[0])) {
-        $cpuInfo = $cpuInfo[0];
-     }
+    $cpuInfo = getPsData("Get-CimInstance -ClassName Win32_Processor");
     $cpuModelo      = $cpuInfo['Name'] ?? 'Processador Desconhecido';
     $cpuCores       = $cpuInfo['NumberOfCores'] ?? 0;
     $cpuThreads     = $cpuInfo['NumberOfLogicalProcessors'] ?? 0;
@@ -86,19 +65,11 @@ function coletarDadosEAnalisar(array $config): array {
     $cpuSocket      = $cpuInfo['SocketDesignation'] ?? 'N/A';
 
     // 2. PLACA-MÃE (Motherboard / Mainboard)
-    $boardInfo = getPsData("Get-CimInstance Win32_BaseBoard");
-
-                if (isset($boardInfo[0])) {
-                    $boardInfo = $boardInfo[0];
-    }
+    $boardInfo = getPsData("Get-CimInstance -ClassName Win32_BaseBoard");
     $moboFabricante = $boardInfo['Manufacturer'] ?? 'Desconhecido';
     $moboModelo     = $boardInfo['Product'] ?? 'Desconhecido';
 
-  $biosInfo = getPsData("Get-CimInstance Win32_BIOS");
-
-                if (isset($biosInfo[0])) {
-                    $biosInfo = $biosInfo[0];
-}
+    $biosInfo = getPsData("Get-CimInstance -ClassName Win32_BIOS");
     $biosVersao = $biosInfo['SMBIOSBIOSVersion'] ?? ($biosInfo['Version'] ?? 'N/A');
 
     // 3. PLACA DE VÍDEO (GPU)
@@ -113,25 +84,7 @@ function coletarDadosEAnalisar(array $config): array {
     $ramTotalMB = round(($osInfo['TotalVisibleMemorySize'] ?? 0) / 1024);
     $ramLivreMB = round(($osInfo['FreePhysicalMemory'] ?? 0) / 1024);
 
-    $ramPentesInfo = getPsData("Get-CimInstance Win32_PhysicalMemory");
-
-          if (isset($ramPentesInfo['Capacity'])) {
-    $ramPentesInfo = [$ramPentesInfo];
-}
-
-if (!is_array($ramPentesInfo)) {
-    $ramPentesInfo = [];
-}
-
-$pentesCount = count($ramPentesInfo);
-
-$ramClockMHz = 0;
-$ramTipo = 'Desconhecido';
-
-if ($pentesCount > 0) {
-    $ramClockMHz = $ramPentesInfo[0]['Speed'] ?? 0;
-    $ramTipo = traduzirTipoRam((int)($ramPentesInfo[0]['SMBIOSMemoryType'] ?? 0));
-}
+    $ramPentesInfo = getPsData("Get-CimInstance -ClassName Win32_PhysicalMemory");
     // Se for apenas 1 pente, engloba em array para manter o padrão
     if (isset($ramPentesInfo['Capacity'])) {
         $ramPentesInfo = [$ramPentesInfo];
@@ -147,30 +100,15 @@ if ($pentesCount > 0) {
     }
 
     // 5. ARMAZENAMENTO (DISCO C:)
-    $diskInfo = getPsData("Get-CimInstance Win32_LogicalDisk | Where-Object { \$_.DeviceID -eq 'C:' }");
+    $diskInfo     = getPsData("Get-CimInstance -ClassName Win32_LogicalDisk -Filter \"DeviceID='C:'\"");
+    $discoTotalGB = round(($diskInfo['Size'] ?? 0) / (1024 * 1024 * 1024));
+    $discoLivreGB = round(($diskInfo['FreeSpace'] ?? 0) / (1024 * 1024 * 1024));
 
-if (isset($diskInfo[0])) {
-    $diskInfo = $diskInfo[0];
-}
-
-$discoTotalGB = 0;
-$discoLivreGB = 0;
-
-if (is_array($diskInfo)) {
-
-    if (isset($diskInfo['Size'])) {
-        $discoTotalGB = round(((float)$diskInfo['Size']) / 1073741824, 2);
-    }
-
-    if (isset($diskInfo['FreeSpace'])) {
-        $discoLivreGB = round(((float)$diskInfo['FreeSpace']) / 1073741824, 2);
-    }
-}
     // 6. SISTEMA OPERACIONAL E REDE
     $osNome  = $osInfo['Caption'] ?? 'Windows OS';
     $osArch  = $osInfo['OSArchitecture'] ?? '64-bit';
 
-$netInfo = getPsData("Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { \$_.IPEnabled -eq \$true }");
+    $netInfo = getPsData("Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq \$true }");
     $netActive = isset($netInfo[0]) ? $netInfo[0] : $netInfo;
     $ipArray   = $netActive['IPAddress'] ?? [];
     $ipLocal   = is_array($ipArray) ? ($ipArray[0] ?? '127.0.0.1') : $ipArray;
