@@ -230,19 +230,28 @@ function coletarDadosEAnalisar(array $config): array {
 }
 
 function enviarParaAPI(array $payload, string $apiUrl, string $apiToken): bool {
+    $jsonPayload = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+    if ($jsonPayload === false) {
+        file_put_contents(__DIR__ . '/agente_erros.log', date('[Y-m-d H:i:s] ') . "Falha ao codificar JSON do payload.\n", FILE_APPEND);
+        return false;
+    }
+
     $ch = curl_init($apiUrl);
-    
+
     curl_setopt_array($ch, [
         CURLOPT_POST           => true,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER     => [
             'Content-Type: application/json',
+            'Accept: application/json',
             'Authorization: Bearer ' . $apiToken
         ],
-        CURLOPT_POSTFIELDS     => json_encode($payload),
-        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_POSTFIELDS     => $jsonPayload,
+        CURLOPT_TIMEOUT        => 15,
         CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_SSL_VERIFYHOST => false
+        CURLOPT_SSL_VERIFYHOST => false,
+        CURLOPT_VERBOSE        => false
     ]);
 
     $response = curl_exec($ch);
