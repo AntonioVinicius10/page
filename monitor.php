@@ -75,66 +75,46 @@ function coletarDadosEAnalisar(array $config): array {
 
     // 1. PROCESSADOR (CPU)
     $cpuInfo = getPsData("Get-CimInstance Win32_Processor");
-
-       if (isset($cpuInfo[0])) {
+    if (isset($cpuInfo[0])) {
         $cpuInfo = $cpuInfo[0];
-     }
+    }
     $cpuModelo      = $cpuInfo['Name'] ?? 'Processador Desconhecido';
     $cpuCores       = $cpuInfo['NumberOfCores'] ?? 0;
     $cpuThreads     = $cpuInfo['NumberOfLogicalProcessors'] ?? 0;
     $cpuClockMaxMHz = $cpuInfo['MaxClockSpeed'] ?? 0;
     $cpuSocket      = $cpuInfo['SocketDesignation'] ?? 'N/A';
 
-    // 2. PLACA-MÃE (Motherboard / Mainboard)
+    // 2. PLACA-MÃE
     $boardInfo = getPsData("Get-CimInstance Win32_BaseBoard");
-
-                if (isset($boardInfo[0])) {
-                    $boardInfo = $boardInfo[0];
+    if (isset($boardInfo[0])) {
+        $boardInfo = $boardInfo[0];
     }
     $moboFabricante = $boardInfo['Manufacturer'] ?? 'Desconhecido';
     $moboModelo     = $boardInfo['Product'] ?? 'Desconhecido';
 
-  $biosInfo = getPsData("Get-CimInstance Win32_BIOS");
-
-                if (isset($biosInfo[0])) {
-                    $biosInfo = $biosInfo[0];
-}
+    $biosInfo = getPsData("Get-CimInstance Win32_BIOS");
+    if (isset($biosInfo[0])) {
+        $biosInfo = $biosInfo[0];
+    }
     $biosVersao = $biosInfo['SMBIOSBIOSVersion'] ?? ($biosInfo['Version'] ?? 'N/A');
 
     // 3. PLACA DE VÍDEO (GPU)
     $gpuInfo = getPsData("Get-CimInstance -ClassName Win32_VideoController");
-    // Trata caso venha array (notebooks com GPU integrada + dedicada)
     $gpuPrincipal = isset($gpuInfo[0]) ? $gpuInfo[0] : $gpuInfo;
     $gpuModelo = $gpuPrincipal['Name'] ?? 'Placa de Vídeo Desconhecida';
     $gpuVramMB = round(($gpuPrincipal['AdapterRAM'] ?? 0) / (1024 * 1024));
 
-    // 4. MEMÓRIA RAM DETALHADA
+    // 4. MEMÓRIA RAM
     $osInfo     = getPsData("Get-CimInstance -ClassName Win32_OperatingSystem");
     $ramTotalMB = round(($osInfo['TotalVisibleMemorySize'] ?? 0) / 1024);
     $ramLivreMB = round(($osInfo['FreePhysicalMemory'] ?? 0) / 1024);
 
     $ramPentesInfo = getPsData("Get-CimInstance Win32_PhysicalMemory");
-
-          if (isset($ramPentesInfo['Capacity'])) {
-    $ramPentesInfo = [$ramPentesInfo];
-}
-
-if (!is_array($ramPentesInfo)) {
-    $ramPentesInfo = [];
-}
-
-$pentesCount = count($ramPentesInfo);
-
-$ramClockMHz = 0;
-$ramTipo = 'Desconhecido';
-
-if ($pentesCount > 0) {
-    $ramClockMHz = $ramPentesInfo[0]['Speed'] ?? 0;
-    $ramTipo = traduzirTipoRam((int)($ramPentesInfo[0]['SMBIOSMemoryType'] ?? 0));
-}
-    // Se for apenas 1 pente, engloba em array para manter o padrão
     if (isset($ramPentesInfo['Capacity'])) {
         $ramPentesInfo = [$ramPentesInfo];
+    }
+    if (!is_array($ramPentesInfo)) {
+        $ramPentesInfo = [];
     }
 
     $pentesCount = count($ramPentesInfo);
@@ -143,34 +123,53 @@ if ($pentesCount > 0) {
 
     if ($pentesCount > 0) {
         $ramClockMHz = $ramPentesInfo[0]['Speed'] ?? 0;
-        $ramTipo = traduzirTipoRam($ramPentesInfo[0]['SMBIOSMemoryType'] ?? 0);
+        $ramTipo     = traduzirTipoRam((int)($ramPentesInfo[0]['SMBIOSMemoryType'] ?? 0));
     }
 
-    // 5. ARMAZENAMENTO (DISCO C:)
-    $diskInfo = getPsData("Get-CimInstance Win32_LogicalDisk | Where-Object { \$_.DeviceID -eq 'C:' }");
-
-if (isset($diskInfo[0])) {
-    $diskInfo = $diskInfo[0];
-}
-
-$discoTotalGB = 0;
-$discoLivreGB = 0;
-
-if (is_array($diskInfo)) {
-
-    if (isset($diskInfo['Size'])) {
-        $discoTotalGB = round(((float)$diskInfo['Size']) / 1073741824, 2);
+    // 5. ARMAZENAMENTO (TODOS OS DISCOS LOCAIS - DriveType = 3)
+    $disksRaw = getPsData("Get-CimInstance Win32_LogicalDisk | Where-Object { \$_.DriveType -eq 3 }");
+    
+    // Garante que seja um array iterável mesmo se houver apenas 1 disco
+    if (isset($disksRaw['DeviceID'])) {
+        $disksRaw = [$disksRaw];
     }
 
-    if (isset($diskInfo['FreeSpace'])) {
-        $discoLivreGB = round(((float)$diskInfo['FreeSpace']) / 1073741824, 2);
+    $listaDiscos  = [];
+    $discoTotalGB = 0;
+    $discoLivreGB = 0;
+
+    if (is_array($disksRaw)) {
+        foreach ($disksRaw as $d) {
+            $unidade = $d['DeviceID'] ?? 'N/A';
+            $total   = round(((float)($d['Size'] ?? 0)) / 1073741824, 2);
+            $livre   = round(((float)($d['FreeSpace'] ?? 0)) / 1073741824, 2);
+
+            // Guarda o array individual para enviar na chave 'discos'
+            $listaDiscos[] = [
+                'unidade'  => $unidade,
+                'total_gb' => $total,
+                'livre_gb' => $livre
+            ];
+
+            // Se for o disco principal C:, guarda nos campos legados de fallback
+            if (strtoupper($unidade) === 'C:') {
+                $discoTotalGB = $total;
+                $discoLivreGB = $livre;
+            }
+        }
     }
-}
+
+    // Caso o disco C: não exista com essa letra exata, usa o primeiro da lista como fallback
+    if ($discoTotalGB == 0 && !empty($listaDiscos)) {
+        $discoTotalGB = $listaDiscos[0]['total_gb'];
+        $discoLivreGB = $listaDiscos[0]['livre_gb'];
+    }
+
     // 6. SISTEMA OPERACIONAL E REDE
     $osNome  = $osInfo['Caption'] ?? 'Windows OS';
     $osArch  = $osInfo['OSArchitecture'] ?? '64-bit';
 
-$netInfo = getPsData("Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { \$_.IPEnabled -eq \$true }");
+    $netInfo   = getPsData("Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { \$_.IPEnabled -eq \$true }");
     $netActive = isset($netInfo[0]) ? $netInfo[0] : $netInfo;
     $ipArray   = $netActive['IPAddress'] ?? [];
     $ipLocal   = is_array($ipArray) ? ($ipArray[0] ?? '127.0.0.1') : $ipArray;
@@ -179,13 +178,17 @@ $netInfo = getPsData("Get-CimInstance Win32_NetworkAdapterConfiguration | Where-
     // 7. ALERTAS
     $alertas = [];
     if ($ramTotalMB > 0 && ($ramLivreMB / $ramTotalMB) < 0.10) {
-        $alertas[] = 'A memoria ram esta quase cheia';
+        $alertas[] = 'A memória RAM está quase cheia';
     }
-    if ($discoLivreGB < 5) {
-        $alertas[] = 'O disco esta Quase cheio';
+    
+    // Alerta específico para cada disco com menos de 5GB livres
+    foreach ($listaDiscos as $disk) {
+        if ($disk['livre_gb'] < 5) {
+            $alertas[] = "O disco ({$disk['unidade']}) está quase cheio ({$disk['livre_gb']} GB livres)";
+        }
     }
 
-    // PAYLOAD "CPU-Z STYLE" COMPLETO
+    // PAYLOAD COMPLETO ENVIADO PARA A API
     return [
         'token'           => $config['api_token'],
         'hostname'        => trim($hostname),
@@ -217,9 +220,10 @@ $netInfo = getPsData("Get-CimInstance Win32_NetworkAdapterConfiguration | Where-
         'ram_clock_mhz'   => $ramClockMHz,
         'ram_pentes'      => $pentesCount,
 
-        // Dados de Disco
+        // Dados de Disco (Legados + Novo Array Completo)
         'disco_total_gb'  => $discoTotalGB,
         'disco_livre_gb'  => $discoLivreGB,
+        'discos'          => $listaDiscos, // <-- Array com C:, D:, E:, etc.
 
         'alertas'         => $alertas
     ];
